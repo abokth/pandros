@@ -19,6 +19,6 @@ setuptools.setup(
         "Operating System :: OS Independent",
     ],
     python_requires='>=3.6',
-    install_requires=["pandas", "openpyxl", "xlrd", "odf", "defusedxml"],
+    install_requires=["pandas", "openpyxl", "xlrd", "odfpy", "defusedxml"],
 )
 
