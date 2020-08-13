@@ -12,13 +12,13 @@ setuptools.setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://gita.sys.kth.se/abo/pandros",
-    packages=['pandros', 'pandros._private', 'pandros.ugclient'],
+    packages=['pandros'],
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
     python_requires='>=3.6',
-    install_requires=["pandra","openpyxl", "xlrd", "odf", "defusedxml"],
+    install_requires=["pandas", "openpyxl", "xlrd", "odf", "defusedxml"],
 )
 
