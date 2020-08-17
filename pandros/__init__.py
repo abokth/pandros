@@ -33,6 +33,20 @@ from defusedxml.common import EntitiesForbidden
 def defuse():
     defusedxml.defuse_stdlib()
 
+class ValidationException(Exception):
+    def readable(self, indent=0):
+        yield "   "*indent + str(self)
+
+class MultiValidationException(ValidationException):
+    def __init__(self, multi, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.multi = multi
+
+    def readable(self, indent=0):
+        yield "   "*indent + "Neither interpretation could be accepted:"
+        for e in self.multi:
+            yield from e.readable(indent=indent+1)
+
 class AddResults:
     def __init__(self, person, result_collector, **results_to_add):
         self.person = person
@@ -77,28 +91,16 @@ class Analysis:
         self.columns = ColumnsAnalysis(sheet)
         self.interpretation = self.columns.interpretation
 
-    def print(self):
-        self.columns.print()
-
 class ColumnsAnalysis:
     def __init__(self, sheet):
         self.sheet = sheet
-        self.columnanalyses = [ColumnAnalysis(sheet[column]) for column in sheet.columns]
+        columnanalyses_or = [ValidOr(ColumnAnalysis, sheet[column]) for column in sheet.columns]
 
-        self.interpretation = InterpretationCandidates([PersonList]).find_one(self.columnanalyses)
-        self.valid = self.interpretation is not None
-
-    def print(self):
-        self.interpretation.print()
+        self.interpretation = InterpretationCandidates([PersonList]).find_one(columnanalyses_or)
 
 class PersonList:
-    def __init__(self, columnanalyses):
-        columnanalysis_keys = [columnanalysis.interpretation.key for columnanalysis in columnanalyses if columnanalysis.interpretation is not None]
-        if len(columnanalysis_keys) > len(set(columnanalysis_keys)):
-            self.is_valid = False
-            return
-
-        columns = {columnanalysis.interpretation.key:columnanalysis for columnanalysis in columnanalyses if columnanalysis.interpretation is not None}
+    def __init__(self, columnanalyses_or):
+        columns = {columnanalysis_or.res.interpretation.key:columnanalysis_or.res for columnanalysis_or in columnanalyses_or if columnanalysis_or.res}
 
         keys = {
             'pnr': {'required': True },
@@ -106,17 +108,23 @@ class PersonList:
             'given_name': {'required': True},
             'email': {'required': False}
         }
+
+        for (key,keyinfo) in keys.items():
+            if keyinfo['required']:
+                matching_columns = [columnanalysis_or.res for columnanalysis_or in columnanalyses_or if columnanalysis_or.res and columnanalysis_or.res.interpretation.key == key]
+                if len(matching_columns) > 1:
+                    raise ValidationException("multiple columns for {key}")
+
         for (key,keyinfo) in keys.items():
             if keyinfo['required'] and key not in columns:
-                self.is_valid = False
-                return
+                raise MultiValidationException([columnanalysis_or.e for columnanalysis_or in columnanalyses_or if columnanalysis_or.res is None], f"not enough data, missing {key}")
             if key in columns:
                 keys[key]['column'] = columns[key]
         self.columns = keys
 
         column_row_sizes = [len(self.columns[key]['column'].column) for key in self.columns.keys() if 'column' in self.columns[key]]
         if min(column_row_sizes) != max(column_row_sizes):
-            self.is_valid = False
+            raise ValidationException("mismatched columns")
             return
 
         def renamed_column(key):
@@ -136,7 +144,6 @@ class PersonList:
         self.persons = persons
 
         self.items_type = 'persons'
-        self.is_valid = True
 
     def print(self):
         print("Person information:")
@@ -171,21 +178,28 @@ class ColumnAnalysis:
         self.column = column
 
         self.interpretation = InterpretationCandidates([FamilyNameColumn, GivenNameColumn, PnrColumn, EmailColumn]).find_one(column)
-        self.valid = self.interpretation is not None
 
-    def print(self):
-        self.interpretation.print()
+class ValidOr:
+    def __init__(self, f, *args, **kwargs):
+        self.res = None
+        self.e = None
+        try:
+            self.res = f(*args, **kwargs)
+        except ValidationException as e:
+            self.e = e
 
 class InterpretationCandidates:
     def __init__(self, classes):
         self.classes = classes
 
     def find_one(self, *args, **kwargs):
-        interpretation_candidates = [interpretation(*args, **kwargs) for interpretation in self.classes]
-        valid_interpretations = [interpretation_candidate for interpretation_candidate in interpretation_candidates if interpretation_candidate.is_valid]
+        interpretation_candidates = [ValidOr(interpretation, *args, **kwargs) for interpretation in self.classes]
+        valid_interpretations = [interpretation_candidate.res for interpretation_candidate in interpretation_candidates if interpretation_candidate.res]
 
-        if len(valid_interpretations) != 1:
-            return None
+        if len(valid_interpretations) == 0:
+            raise MultiValidationException([c.e for c in interpretation_candidates], "No valid interpretatons")
+        if len(valid_interpretations) > 1:
+            raise ValidationException("Too many valid interpretatons")
 
         return valid_interpretations[0]
 
@@ -196,23 +210,17 @@ class NameColumn:
     def __init__(self, column):
         name = column.name.lower().strip()
         if not self.NAME_RE.match(name):
-            self.is_valid = False
-            return
+            raise ValidationException(f"Unrecognized column name '{column.name}'")
 
         num_rows = len(column)
-        num_alpha = len([row for row in column if row.strip().isalpha()])
+        num_alpha = len([row for row in column if row.strip().replace(" ","").isalpha()])
         if 100 * num_alpha / num_rows < 80:
-            self.is_valid = False
-            return
+            raise ValidationException(f"Content of column '{column.name}' is not mostly alphabetical")
 
         self.column = column
         self.names = [row.strip() for row in column]
         self.found_data = self.names
         self.key = self.KEY
-        self.is_valid = True
-
-    def print(self):
-        print(f"{self.column.name} is a {self.KEY}")
 
 class FamilyNameColumn(NameColumn):
     KEY = "family_name"
@@ -227,23 +235,17 @@ class PnrColumn:
 
     def __init__(self, column):
         name = column.name.lower().strip()
-        if not self.NAME_RE.match(name):
-            self.is_valid = False
-            return
+        if not self.NAME_RE.match(name): 
+            raise ValidationException("Unrecognized column name")
 
         pnrs = column.str.extract(r'(((19|20)\d\d|\d\d)[01]\d[0-3]\d((-|)[T\d]\d\d\d|))')[0]
         if pnrs.hasnans:
-            self.is_valid = False
-            return
+            raise ValidationException("Content does not match pnr data")
 
         self.column = column
         self.pnrs = pnrs
         self.found_data = self.pnrs
         self.key = "pnr"
-        self.is_valid = True
-
-    def print(self):
-        print(f"{self.column.name} is a pnr/birthdate column")
 
 class EmailColumn:
     NAME_RE = re.compile("(e*-*mail|e*-*post)")
@@ -251,22 +253,16 @@ class EmailColumn:
     def __init__(self, column):
         name = column.name.lower().strip()
         if not self.NAME_RE.match(name):
-            self.is_valid = False
-            return
+            raise ValidationException("Unrecognized column name")
 
         emails = column.str.extract('([\w\.]+@\w[\w\.]*\w\w)', flags=re.U)[0]
         if emails.hasnans:
-            self.is_valid = False
-            return
+            raise ValidationException("Content is not valid email addresses")
 
         self.column = column
         self.emails = emails
         self.found_data = self.emails
         self.key = "email"
-        self.is_valid = True
-
-    def print(self):
-        print(f"{self.column.name} is an email column")
 
 def read_file(path):
     if path.endswith(".xlsx"):
