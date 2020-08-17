@@ -85,6 +85,34 @@ class ResultCollector:
         self.write_callback(self.results)
         print(self.results)
 
+class FileAnalysis:
+    def __init__(self, path):
+        interpretations = [ValidOr(SheetReadAnalysis, path, header=header) for header in range(4)]
+        valid_interpretations = [interpretation for interpretation in interpretations if interpretation.res]
+
+        if len(valid_interpretations) == 0:
+            raise MultiValidationException([c.e for c in interpretation_candidates], "No valid interpretatons")
+        if len(valid_interpretations) > 1:
+            raise ValidationException("Too many valid interpretatons")
+
+        interpretation = valid_interpretations[0].res
+
+        self.sheet = interpretation.sheet
+        self.columns = interpretation.columns
+        self.interpretation = self.columns.interpretation
+
+    def print(self):
+        self.interpretation.print()
+
+class SheetReadAnalysis:
+    def __init__(self, *args, **kwargs):
+        sheet = read_file(*args, **kwargs)
+        interpretation = Analysis(sheet.convert_dtypes())
+
+        self.sheet = interpretation.sheet
+        self.columns = interpretation.columns
+        self.interpretation = self.columns.interpretation
+
 class Analysis:
     def __init__(self, sheet):
         self.sheet = sheet
