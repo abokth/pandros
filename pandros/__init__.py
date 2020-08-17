@@ -80,10 +80,10 @@ class AddResults:
         self.result_collector.set_results(self.person.index, **self.results_to_add)
 
 class ResultCollector:
-    def __init__(self, sheet, write_callback):
+    def __init__(self, sheet, fileupdater):
         self.sheet = sheet
         self.results = self.sheet
-        self.write_callback = write_callback
+        self.fileupdater = fileupdater
 
     def get_value(self, row, key):
         if key not in self.results.keys():
@@ -100,12 +100,12 @@ class ResultCollector:
             col = self.results[key].copy()
             col[row] = new_results[key]
             self.results = self.results.assign(**{key:col})
-        self.write_callback(self.results)
+        self.fileupdater.write_callback(self.results)
         print(self.results)
 
 class FileAnalysis:
     def __init__(self, path):
-        interpretations = [ValidOr(SheetReadAnalysis, path, header=header) for header in range(4)]
+        interpretations = [ValidOr(SheetReadAnalysis, path, header_row_shift=header) for header in range(4)]
         valid_interpretations = [interpretation for interpretation in interpretations if interpretation.res]
 
         if len(valid_interpretations) == 0:
@@ -119,20 +119,39 @@ class FileAnalysis:
         self.columns = interpretation.columns
         self.interpretation = self.columns.interpretation
 
+        self.fileupdater = interpretation.fileupdater
+
+    def get_writer(self, path):
+        return ResultCollector(self.sheet, self.fileupdater)
+
     def print(self):
         self.interpretation.print()
 
 class SheetReadAnalysis:
-    def __init__(self, *args, **kwargs):
-        sheet = read_file(*args, **kwargs)
+    def __init__(self, path, header_row_shift=0):
+        sheet = read_file(path, header=header_row_shift)
         try:
-            interpretation = Analysis(sheet.convert_dtypes())
+            interpretation = Analysis(sheet)
         except ValidationException as e:
-            raise ValidationException(f"Read with header on {kwargs['header']} failed") from e
+            raise ValidationException(f"Read with header shifted {header_row_shift} rows down failed") from e
+
+        orig_sheet = read_file(path, header=None)
+        self.fileupdater = SheetUpdater(path, orig_sheet, startrow=header_row_shift)
 
         self.sheet = interpretation.sheet
         self.columns = interpretation.columns
         self.interpretation = self.columns.interpretation
+
+class SheetUpdater:
+    def __init__(self, path, orig_sheet, **update_kwargs):
+        def write_callback(new_sheet):
+            writer = pd.ExcelWriter(path)
+            # Write orig_sheet exactly as inputed
+            orig_sheet.to_excel(writer, header=None, index=False)
+            # Write new_sheet at the location where we read it before.
+            new_sheet.to_excel(writer, index=False, **update_kwargs)
+            writer.save()
+        self.write_callback = write_callback
 
 class Analysis:
     def __init__(self, sheet):
@@ -267,7 +286,7 @@ class NameColumn:
             raise ValidationException(f"Content of column '{column.name}' is not mostly alphabetical")
 
         self.column = column
-        self.names = [row.strip() for row in column]
+        self.names = [row.strip() for row in column.convert_dtypes()]
         self.found_data = self.names
         self.key = self.KEY
 
@@ -287,7 +306,7 @@ class PnrColumn:
         if not self.NAME_RE.match(name): 
             raise ValidationException(f"Unrecognized column name '{column.name}'")
 
-        pnrs = column.str.extract(r'(((19|20)\d\d|\d\d)[01]\d[0-3]\d((-|)[T\d]\d\d\d|))')[0]
+        pnrs = column.convert_dtypes().str.extract(r'(((19|20)\d\d|\d\d)[01]\d[0-3]\d((-|)[T\d]\d\d\d|))')[0]
         if pnrs.hasnans:
             raise ValidationException("Content does not match pnr data")
 
@@ -304,7 +323,7 @@ class EmailColumn:
         if not self.NAME_RE.match(name):
             raise ValidationException(f"Unrecognized column name '{column.name}'")
 
-        emails = column.str.extract('([\w\.]+@\w[\w\.]*\w\w)', flags=re.U)[0]
+        emails = column.convert_dtypes().str.extract('([\w\.]+@\w[\w\.]*\w\w)', flags=re.U)[0]
         if emails.hasnans:
             raise ValidationException("Content is not valid email addresses")
 
@@ -324,18 +343,18 @@ def read_file(path, *args, **kwargs):
         return pd.read_csv(path, *args, **kwargs)
     raise Exception("Unknown input format")
 
-def write_file(sheet, path):
+def write_file(sheet, path, **kwargs):
     if path.endswith(".xlsx"):
-        sheet.to_excel(path)
+        sheet.to_excel(path, **kwargs)
         return
     if path.endswith(".xls"):
-        sheet.to_excel(path)
+        sheet.to_excel(path, **kwargs)
         return
     if path.endswith(".odf"):
-        sheet.to_excel(path)
+        sheet.to_excel(path, **kwargs)
         return
     if path.endswith(".csv"):
-        sheet.to_csv(path)
+        sheet.to_csv(path, **kwargs)
         return
     raise Exception("Unknown input format")
 
