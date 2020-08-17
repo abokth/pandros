@@ -37,6 +37,10 @@ class ValidationException(Exception):
     def readable(self, indent=0):
         yield "   "*indent + str(self)
 
+    @property
+    def long_message(self):
+        return "\n".join(self.readable())
+
 class MultiValidationException(ValidationException):
     def __init__(self, multi, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -292,15 +296,15 @@ class EmailColumn:
         self.found_data = self.emails
         self.key = "email"
 
-def read_file(path):
+def read_file(path, *args, **kwargs):
     if path.endswith(".xlsx"):
-        return pd.read_excel(path)
+        return pd.read_excel(path, *args, **kwargs)
     if path.endswith(".xls"):
-        return pd.read_excel(path)
+        return pd.read_excel(path, *args, **kwargs)
     if path.endswith(".odf"):
-        return pd.read_excel(path)
+        return pd.read_excel(path, *args, **kwargs)
     if path.endswith(".csv"):
-        return pd.read_csv(path)
+        return pd.read_csv(path, *args, **kwargs)
     raise Exception("Unknown input format")
 
 def write_file(sheet, path):
