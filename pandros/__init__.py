@@ -35,19 +35,33 @@ def defuse():
 
 class ValidationException(Exception):
     def readable(self, indent=0):
-        yield "   "*indent + str(self)
+        if self.__cause__:
+            yield "   "*indent + str(self) + ":"
+            yield from self.__cause__.readable(indent=indent+1)
+        else:
+            yield "   "*indent + str(self)
 
     @property
     def long_message(self):
         return "\n".join(self.readable())
 
+    def __eq__(self, other):
+        return self.long_message == other.long_message
+
+    def __lt__(self, other):
+        return self.long_message < other.long_message
+
+    def __hash__(self):
+        return hash(self.long_message)
+
 class MultiValidationException(ValidationException):
     def __init__(self, multi, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.multi = multi
+        self.multi = list(set(multi))
+        self.multi.sort()
 
     def readable(self, indent=0):
-        yield "   "*indent + "Neither interpretation could be accepted:"
+        yield "   "*indent + f"{str(self)}:"
         for e in self.multi:
             yield from e.readable(indent=indent+1)
 
@@ -95,7 +109,7 @@ class FileAnalysis:
         valid_interpretations = [interpretation for interpretation in interpretations if interpretation.res]
 
         if len(valid_interpretations) == 0:
-            raise MultiValidationException([c.e for c in interpretation_candidates], "No valid interpretatons")
+            raise MultiValidationException([c.e for c in interpretations], "No valid interpretatons as a file with a header column")
         if len(valid_interpretations) > 1:
             raise ValidationException("Too many valid interpretatons")
 
@@ -111,7 +125,10 @@ class FileAnalysis:
 class SheetReadAnalysis:
     def __init__(self, *args, **kwargs):
         sheet = read_file(*args, **kwargs)
-        interpretation = Analysis(sheet.convert_dtypes())
+        try:
+            interpretation = Analysis(sheet.convert_dtypes())
+        except ValidationException as e:
+            raise ValidationException(f"Read with header on {kwargs['header']} failed") from e
 
         self.sheet = interpretation.sheet
         self.columns = interpretation.columns
@@ -268,7 +285,7 @@ class PnrColumn:
     def __init__(self, column):
         name = column.name.lower().strip()
         if not self.NAME_RE.match(name): 
-            raise ValidationException("Unrecognized column name")
+            raise ValidationException(f"Unrecognized column name '{column.name}'")
 
         pnrs = column.str.extract(r'(((19|20)\d\d|\d\d)[01]\d[0-3]\d((-|)[T\d]\d\d\d|))')[0]
         if pnrs.hasnans:
@@ -285,7 +302,7 @@ class EmailColumn:
     def __init__(self, column):
         name = column.name.lower().strip()
         if not self.NAME_RE.match(name):
-            raise ValidationException("Unrecognized column name")
+            raise ValidationException(f"Unrecognized column name '{column.name}'")
 
         emails = column.str.extract('([\w\.]+@\w[\w\.]*\w\w)', flags=re.U)[0]
         if emails.hasnans:
