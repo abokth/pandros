@@ -293,14 +293,15 @@ class NameColumn:
             return len(s) > 1 and all([c.isalpha() or c.isspace() for c in s])
 
         num_rows = len(column)
-        num_alpha = len([row for row in column if istext(row)])
-        if 100 * num_alpha / num_rows < 80:
+        valid_rows = [i for i in column.index if istext(column[i])]
+        if 100 * len(valid_rows) / num_rows < 80:
             raise ValidationException(f"Content of column '{column.name}' is not mostly alphabetical")
 
         self.column = column
         self.names = [str(row).strip() for row in column.convert_dtypes()]
         self.found_data = self.names
         self.key = self.KEY
+        self.valid_rows = valid_rows
 
 class FamilyNameColumn(NameColumn):
     KEY = "family_name"
@@ -322,14 +323,15 @@ class PnrColumn:
             raise ValidationException(f"Unrecognized column name '{column.name}'")
 
         pnrs = column.astype("string").str.extract(r'(((19|20)\d\d|\d\d)[01]\d[0-3]\d((-|)[T\d]\d\d\d|))')[0]
-        num_valid_pnrs = len([s for s in pnrs if not pd.isna(s)])
-        if 100 * num_valid_pnrs / len(pnrs) < 80:
+        valid_rows = [i for i in pnrs.index if not pd.isna(pnrs[i])]
+        if 100 * len(valid_rows) / len(pnrs) < 80:
             raise ValidationException("Content does not match pnr data")
 
         self.column = column
         self.pnrs = pnrs
         self.found_data = self.pnrs
         self.key = "pnr"
+        self.valid_rows = valid_rows
 
 class EmailColumn:
     NAME_RE = re.compile("(e*-*mail|e*-*post)(adress|address)", flags=re.I)
@@ -343,14 +345,15 @@ class EmailColumn:
             raise ValidationException(f"Unrecognized column name '{column.name}'")
 
         emails = column.convert_dtypes().str.extract('([\w\.]+@\w[\w\.]*\w\w)', flags=re.U)[0]
-        num_valid_emails = len([e for e in emails if not pd.isna(e)])
-        if 100 * num_valid_emails / len(emails) < 80:
+        valid_rows = [i for i in emails.index if not pd.isna(emails[i])]
+        if 100 * len(valid_rows) / len(emails) < 80:
             raise ValidationException("Content is not valid email addresses")
 
         self.column = column
         self.emails = emails
         self.found_data = self.emails
         self.key = "email"
+        self.valid_rows = valid_rows
 
 def read_file(path, *args, **kwargs):
     if path.endswith(".xlsx"):
