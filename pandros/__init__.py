@@ -319,9 +319,6 @@ class PnrColumn:
         if not self.NAME_RE.match(name): 
             raise ValidationException(f"Unrecognized column name '{column.name}'")
 
-        def unmangle_bad_cell_format(d):
-            print(d)
-            return str(d)
         pnrs = column.astype("string").str.extract(r'(((19|20)\d\d|\d\d)[01]\d[0-3]\d((-|)[T\d]\d\d\d|))')[0]
         num_valid_pnrs = len([s for s in pnrs if not pd.isna(s)])
         if 100 * num_valid_pnrs / len(pnrs) < 80:
