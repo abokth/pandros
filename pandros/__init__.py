@@ -340,7 +340,8 @@ class EmailColumn:
             raise ValidationException(f"Unrecognized column name '{column.name}'")
 
         emails = column.convert_dtypes().str.extract('([\w\.]+@\w[\w\.]*\w\w)', flags=re.U)[0]
-        if emails.hasnans:
+        num_valid_emails = len([e for e in emails if not pd.isna(e)])
+        if 100 * num_valid_emails / len(emails) < 80:
             raise ValidationException("Content is not valid email addresses")
 
         self.column = column
