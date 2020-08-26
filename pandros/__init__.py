@@ -287,8 +287,10 @@ class NameColumn:
             raise ValidationException(f"Unrecognized column name '{column.name}'")
 
         def istext(s):
-            s = str(s)
-            return all([c.isalpha() or c.isspace() for c in s])
+            if pd.isna(s):
+                return False
+            s = str(s).strip()
+            return len(s) > 1 and all([c.isalpha() or c.isspace() for c in s])
 
         num_rows = len(column)
         num_alpha = len([row for row in column if istext(row)])
