@@ -36,8 +36,11 @@ def defuse():
 class ValidationException(Exception):
     def readable(self, indent=0):
         if self.__cause__:
-            yield "   "*indent + str(self) + ":"
-            yield from self.__cause__.readable(indent=indent+1)
+            if isinstance(self.__cause__, ValidationException):
+                yield "   "*indent + str(self) + ":"
+                yield from self.__cause__.readable(indent=indent+1)
+            else:
+                yield "   "*indent + str(self) + ": " + str(self.__cause__)
         else:
             yield "   "*indent + str(self)
 
@@ -276,33 +279,43 @@ class NameColumn:
     NAME_RE = None
 
     def __init__(self, column):
-        name = column.name.lower().strip()
+        try:
+            name = str(column.name.strip())
+        except Exception as e:
+            raise ValidationException(f"Could not parse column name '{column.name}'") from e
         if not self.NAME_RE.match(name):
             raise ValidationException(f"Unrecognized column name '{column.name}'")
 
+        def istext(s):
+            s = str(s)
+            return all([c.isalpha() or c.isspace() for c in s])
+
         num_rows = len(column)
-        num_alpha = len([row for row in column if row.strip().replace(" ","").isalpha()])
+        num_alpha = len([row for row in column if istext(row)])
         if 100 * num_alpha / num_rows < 80:
             raise ValidationException(f"Content of column '{column.name}' is not mostly alphabetical")
 
         self.column = column
-        self.names = [row.strip() for row in column.convert_dtypes()]
+        self.names = [str(row).strip() for row in column.convert_dtypes()]
         self.found_data = self.names
         self.key = self.KEY
 
 class FamilyNameColumn(NameColumn):
     KEY = "family_name"
-    NAME_RE = re.compile("((last|family).*name|efternamn)")
+    NAME_RE = re.compile("((last|family).*name|efternamn)", flags=re.I)
 
 class GivenNameColumn(NameColumn):
     KEY = "given_name"
-    NAME_RE = re.compile("((first|given).*name|förnamn)")
+    NAME_RE = re.compile("((first|given).*name|förnamn)", flags=re.I)
 
 class PnrColumn:
-    NAME_RE = re.compile("((person|t).*(number|nmr|nummer))|(birth(day|date)|födelse(dag|datum))")
+    NAME_RE = re.compile("((person|t).*(number|nmr|nummer))|(birth(day|date)|födelse(dag|datum))", flags=re.I)
 
     def __init__(self, column):
-        name = column.name.lower().strip()
+        try:
+            name = str(column.name.strip())
+        except Exception as e:
+            raise ValidationException(f"Could not parse column name '{column.name}'") from e
         if not self.NAME_RE.match(name): 
             raise ValidationException(f"Unrecognized column name '{column.name}'")
 
@@ -316,10 +329,13 @@ class PnrColumn:
         self.key = "pnr"
 
 class EmailColumn:
-    NAME_RE = re.compile("(e*-*mail|e*-*post)")
+    NAME_RE = re.compile("(e*-*mail|e*-*post)(adress|address)", flags=re.I)
 
     def __init__(self, column):
-        name = column.name.lower().strip()
+        try:
+            name = str(column.name.strip())
+        except Exception as e:
+            raise ValidationException(f"Could not parse column name '{column.name}'") from e
         if not self.NAME_RE.match(name):
             raise ValidationException(f"Unrecognized column name '{column.name}'")
 
