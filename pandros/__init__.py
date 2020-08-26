@@ -211,7 +211,18 @@ class PersonList:
 
         self.new_sheet = rows
 
-        persons = [Person(rows,i) for i in range(len(rows))]
+        valid_rows = None
+        for (key,keyinfo) in keys.items():
+            if keyinfo['required']:
+                column_valid_rows = set(keys[key]['column'].interpretation.valid_rows)
+                if valid_rows is None:
+                    valid_rows = column_valid_rows
+                else:
+                    valid_rows = valid_rows.intersection(column_valid_rows)
+
+        valid_rows = list(valid_rows)
+        valid_rows.sort()
+        persons = [Person(rows,i) for i in valid_rows]
         self.persons = persons
 
         self.items_type = 'persons'
@@ -234,9 +245,11 @@ class Person:
     def __init__(self, rows, index):
         self.index = index
         row = rows[index:index+1]
-        self.pnr = row['pnr'].values[0].replace("-", "")
+        self.pnr = row['pnr'].values[0].replace("-", "").replace(" ", "")
         if len(self.pnr) == 12:
             self.pnr = self.pnr[2:]
+        if len(self.pnr) == 10 and self.pnr[6:8] == "TF":
+            self.pnr = self.pnr[0:6]
         self.given_name = row['given_name'].values[0]
         self.family_name = row['family_name'].values[0]
         self.email = row['email'].values[0] if 'email' in row else None
@@ -322,7 +335,7 @@ class PnrColumn:
         if not self.NAME_RE.match(name): 
             raise ValidationException(f"Unrecognized column name '{column.name}'")
 
-        pnrs = column.astype("string").str.extract(r'(((19|20)\d\d|\d\d)[01]\d[0-3]\d((-|)[T\d]\d\d\d|))')[0]
+        pnrs = column.astype("string").str.extract(r'(((19|20)\d\d|\d\d)[01]\d[0-3]\d *((-|) *[T\d][\dF]\d\d|))')[0]
         valid_rows = [i for i in pnrs.index if not pd.isna(pnrs[i])]
         if 100 * len(valid_rows) / len(pnrs) < 80:
             raise ValidationException("Content does not match pnr data")
