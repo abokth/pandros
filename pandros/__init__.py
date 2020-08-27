@@ -325,7 +325,7 @@ class GivenNameColumn(NameColumn):
     NAME_RE = re.compile("((first|given).*name|förnamn)", flags=re.I)
 
 class PnrColumn:
-    NAME_RE = re.compile("((person|t).*(number|nmr|nr|nummer))|(birth(day|date)|födelse(dag|datum))", flags=re.I)
+    NAME_RE = re.compile("((person|p|t).*(number|nmr|nr|nummer))|(birth(day|date)|födelse(dag|datum))", flags=re.I)
 
     def __init__(self, column):
         try:
