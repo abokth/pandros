@@ -207,18 +207,27 @@ class PersonList:
         rows = pd.concat([column for column in [renamed_column(key) for key in self.columns.keys()] if column is not None], axis=1)
 
         for key in self.columns.keys():
-            rows = rows.assign(**{key:self.columns[key]['column'].interpretation.found_data})
+            if 'column' in self.columns[key]:
+                rows = rows.assign(**{key:self.columns[key]['column'].interpretation.found_data})
 
         self.new_sheet = rows
 
         valid_rows = None
+        max_valid_rows = 0
+        max_valid_column = None
         for (key,keyinfo) in keys.items():
             if keyinfo['required']:
                 column_valid_rows = set(keys[key]['column'].interpretation.valid_rows)
+                if len(column_valid_rows) > max_valid_rows:
+                    max_valid_rows = len(column_valid_rows)
+                    max_valid_column = key
                 if valid_rows is None:
                     valid_rows = column_valid_rows
                 else:
                     valid_rows = valid_rows.intersection(column_valid_rows)
+
+        if 100 * len(valid_rows) / max_valid_rows < 80:
+            raise ValidationException(f"Too many unmatched rows in {max_valid_column} column")
 
         valid_rows = list(valid_rows)
         valid_rows.sort()
@@ -226,6 +235,7 @@ class PersonList:
         self.persons = persons
 
         self.items_type = 'persons'
+        self.valid_rows = valid_rows
 
     def print(self):
         print("Person information:")
@@ -255,7 +265,7 @@ class Person:
         self.email = row['email'].values[0] if 'email' in row else None
 
     def print(self):
-        print(f"pnr {self.pnr}, given name {self.given_name}, family name {self.family_name}, email {self.email}")
+        print(f"row {self.index}: pnr {self.pnr}, given name {self.given_name}, family name {self.family_name}, email {self.email}")
 
 class ColumnAnalysis:
     def __init__(self, column):
@@ -283,6 +293,9 @@ class InterpretationCandidates:
         if len(valid_interpretations) == 0:
             raise MultiValidationException([c.e for c in interpretation_candidates], "No valid interpretatons")
         if len(valid_interpretations) > 1:
+            valid_interpretations.sort(key=lambda x: -len(self.valid_rows))
+            if len(valid_interpretations[0].valid_rows) > len(valid_interpretations[1].valid_rows):
+                return valid_interpretations[0]
             raise ValidationException("Too many valid interpretatons")
 
         return valid_interpretations[0]
@@ -307,7 +320,7 @@ class NameColumn:
 
         num_rows = len(column)
         valid_rows = [i for i in column.index if istext(column[i])]
-        if 100 * len(valid_rows) / num_rows < 80:
+        if 100 * len(valid_rows) / num_rows < 60:
             raise ValidationException(f"Content of column '{column.name}' is not mostly alphabetical")
 
         self.column = column
@@ -337,7 +350,7 @@ class PnrColumn:
 
         pnrs = column.astype("string").str.extract(r'(((19|20)\d\d|\d\d)[01]\d[0-3]\d *((-|) *[T\d][\dF]\d\d|))')[0]
         valid_rows = [i for i in pnrs.index if not pd.isna(pnrs[i])]
-        if 100 * len(valid_rows) / len(pnrs) < 80:
+        if 100 * len(valid_rows) / len(pnrs) < 60:
             raise ValidationException("Content does not match pnr data")
 
         self.column = column
@@ -359,7 +372,7 @@ class EmailColumn:
 
         emails = column.convert_dtypes().str.extract('([\w\.]+@\w[\w\.]*\w\w)', flags=re.U)[0]
         valid_rows = [i for i in emails.index if not pd.isna(emails[i])]
-        if 100 * len(valid_rows) / len(emails) < 80:
+        if 100 * len(valid_rows) / len(emails) < 60:
             raise ValidationException("Content is not valid email addresses")
 
         self.column = column
