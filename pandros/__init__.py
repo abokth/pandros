@@ -260,6 +260,8 @@ class Person:
             self.pnr = self.pnr[2:]
         if len(self.pnr) == 10 and self.pnr[6:8] == "TF":
             self.pnr = self.pnr[0:6]
+        if len(self.pnr) == 8:
+            self.pnr = self.pnr[2:]
         self.given_name = row['given_name'].values[0]
         self.family_name = row['family_name'].values[0]
         self.email = row['email'].values[0] if 'email' in row else None
@@ -303,6 +305,7 @@ class InterpretationCandidates:
 class NameColumn:
     KEY = None
     NAME_RE = None
+    MIN_LENGTH = 2
 
     def __init__(self, column):
         try:
@@ -316,7 +319,7 @@ class NameColumn:
             if pd.isna(s):
                 return False
             s = str(s).strip()
-            return len(s) > 1 and all([c.isalpha() or c.isspace() for c in s])
+            return len(s) >= self.MIN_LENGTH and all([c.isalpha() or c.isspace() or c == "-" for c in s])
 
         num_rows = len(column)
         valid_rows = [i for i in column.index if istext(column[i])]
@@ -332,6 +335,7 @@ class NameColumn:
 class FamilyNameColumn(NameColumn):
     KEY = "family_name"
     NAME_RE = re.compile("((last|family).*name|efternamn)", flags=re.I)
+    MIN_LENGTH = 1
 
 class GivenNameColumn(NameColumn):
     KEY = "given_name"
