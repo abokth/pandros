@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="pandros",
-    version="0.0.4",
+    version="0.0.5",
     author="Alexander Boström",
     author_email="abo@kth.se",
     description="Pandas based routines for interpreting account list shreadsheets",
